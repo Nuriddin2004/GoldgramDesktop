@@ -21,7 +21,7 @@ def replace(relative, old, new, count=1):
 
 
 CPP = 'Telegram/SourceFiles/'
-replace('Telegram/CMakeLists.txt', 'init_non_host_target(Telegram)', 'init_non_host_target(Telegram)\nset_target_properties(Telegram PROPERTIES OUTPUT_NAME Goldgram)')
+replace('Telegram/CMakeLists.txt', 'set(output_name "Telegram")', 'set(output_name "Goldgram")')
 for old, new in [
     ('{53F49750-6209-4FBF-9CA8-7A333C87D1ED}', '{20B4C804-581E-4EAA-94DC-4DAB9D176EB7}'),
     ('"Telegram Win (Unofficial)"', '"Goldgram Desktop Legacy"'),
@@ -92,7 +92,7 @@ text = path.read_text(encoding='utf-8')
 start = text.index('\tauto planeLeft = (width() - st::introCoverIcon.width())')
 end = text.index('\tst::introCoverIcon.paint(p, planeLeft, planeTop, width());', start)
 end += len('\tst::introCoverIcon.paint(p, planeLeft, planeTop, width());')
-replace(CPP + 'intro/intro_step.cpp', text[start:end], '''	static const auto logo = QImage(u":/gui/art/icon256.png"_q);
+replace(CPP + 'intro/intro_step.cpp', text[start:end], '''	static const auto logo = QImage(u":/gui/art/logo_256.png"_q);
 	const auto size = st::introGoldgramSize;
 	p.drawImage(
 		QRect((width() - size) / 2, top + st::introGoldgramTop, size, size),
@@ -103,7 +103,7 @@ start = text.index('QImage TelegramLogoImage() {')
 end = text.index('\n}', start) + 2
 replace(CPP + 'intro/intro_qr.cpp', text[start:end], '''QImage TelegramLogoImage() {
 	const auto size = QSize(st::introQrCenterSize, st::introQrCenterSize);
-	auto result = QImage(u":/gui/art/icon256.png"_q).scaled(
+	auto result = QImage(u":/gui/art/logo_256.png"_q).scaled(
 		size * style::DevicePixelRatio(),
 		Qt::KeepAspectRatio,
 		Qt::SmoothTransformation);
@@ -113,6 +113,11 @@ replace(CPP + 'intro/intro_qr.cpp', text[start:end], '''QImage TelegramLogoImage
 
 for icon in (ROOT / 'assets').glob('icon*'):
     (SOURCE / 'Telegram/Resources/art' / icon.name).write_bytes(icon.read_bytes())
+for name in ('logo_256.png', 'logo_256_no_margin.png'):
+    (SOURCE / 'Telegram/Resources/art' / name).write_bytes((ROOT / 'assets/icon256.png').read_bytes())
+gold_path = 'M78,32L70,41C65,36 59,34 53,34C40,34 32,43 32,55C32,67 41,75 53,75C60,75 65,73 69,70L69,60L53,60L53,49L81,49L81,76C74,83 64,87 53,87C33,87 19,74 19,55C19,36 33,22 53,22C63,22 72,25 78,32Z'
+(SOURCE / 'Telegram/Resources/icons/tray_monochrome.svg').write_bytes(
+    f'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="12 15 76 76"><path fill="#ffffff" d="{gold_path}"/></svg>\r\n'.encode())
 
 theme_path = SOURCE / 'Telegram/Resources/night.tdesktop-theme'
 with zipfile.ZipFile(theme_path) as archive:
