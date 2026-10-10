@@ -66,7 +66,7 @@ replace(CPP + 'logs.cpp', '''#if (!defined Q_OS_WIN && !defined _DEBUG) || defin
 			cForceWorkingDir(psAppDataPath());
 		}
 #endif // (!Q_OS_WIN && !_DEBUG) || Q_OS_WINRT || OS_WIN_STORE || OS_MAC_STORE''', '\t\tcForceWorkingDir(psAppDataPath());')
-replace(CPP + 'logs.cpp', '\tMoveOldDataFiles(launcher.initialWorkingDir());', '')
+replace(CPP + 'logs.cpp', '#elif !defined Q_OS_MAC && !defined _DEBUG // fix first version\n\tMoveOldDataFiles(launcher.initialWorkingDir());\n', '')
 
 replace('Telegram/Resources/winrc/Telegram.rc', '"Telegram Desktop"', '"Goldgram Desktop"', 2)
 replace('Telegram/Resources/winrc/Telegram.rc', '"Telegram FZ-LLC"', '"Goldgram / Nuriddin2004"')
@@ -84,7 +84,32 @@ links = '''
 		link->setClickedCallback([=] { File::OpenUrl(url); });
 	}
 '''
-replace(CPP + 'boxes/about_box.cpp', anchor, anchor + links)
+replace(CPP + 'boxes/about_box.cpp', anchor, anchor + links.rstrip())
+
+replace(CPP + 'intro/intro.style', 'introCoverIconTop: 46px;', 'introCoverIconTop: 46px;\nintroGoldgramSize: 88px;\nintroGoldgramTop: 24px;')
+path = SOURCE / (CPP + 'intro/intro_step.cpp')
+text = path.read_text(encoding='utf-8')
+start = text.index('\tauto planeLeft = (width() - st::introCoverIcon.width())')
+end = text.index('\tst::introCoverIcon.paint(p, planeLeft, planeTop, width());', start)
+end += len('\tst::introCoverIcon.paint(p, planeLeft, planeTop, width());')
+replace(CPP + 'intro/intro_step.cpp', text[start:end], '''	static const auto logo = QImage(u":/gui/art/icon256.png"_q);
+	const auto size = st::introGoldgramSize;
+	p.drawImage(
+		QRect((width() - size) / 2, top + st::introGoldgramTop, size, size),
+		logo);''')
+path = SOURCE / (CPP + 'intro/intro_qr.cpp')
+text = path.read_text(encoding='utf-8')
+start = text.index('QImage TelegramLogoImage() {')
+end = text.index('\n}', start) + 2
+replace(CPP + 'intro/intro_qr.cpp', text[start:end], '''QImage TelegramLogoImage() {
+	const auto size = QSize(st::introQrCenterSize, st::introQrCenterSize);
+	auto result = QImage(u":/gui/art/icon256.png"_q).scaled(
+		size * style::DevicePixelRatio(),
+		Qt::KeepAspectRatio,
+		Qt::SmoothTransformation);
+	result.setDevicePixelRatio(style::DevicePixelRatio());
+	return result;
+}''')
 
 for icon in (ROOT / 'assets').glob('icon*'):
     (SOURCE / 'Telegram/Resources/art' / icon.name).write_bytes(icon.read_bytes())
@@ -126,7 +151,10 @@ for key, value in overrides.items():
     if count != 1:
         raise ValueError(f'Missing palette key: {key}')
 with zipfile.ZipFile(theme_path, 'w', zipfile.ZIP_DEFLATED) as archive:
-    archive.writestr('colors.tdesktop-theme', palette)
-    archive.write(ROOT / 'assets/background.png', 'background.png')
+    for name, data in [('colors.tdesktop-theme', palette.encode()),
+                       ('background.png', (ROOT / 'assets/background.png').read_bytes())]:
+        info = zipfile.ZipInfo(name, date_time=(2026, 10, 10, 0, 0, 0))
+        info.compress_type = zipfile.ZIP_DEFLATED
+        archive.writestr(info, data)
 (ROOT / 'assets/Goldgram.tdesktop-theme').write_bytes(theme_path.read_bytes())
 print('Goldgram branding, Windows identity, links and default gold theme applied.')

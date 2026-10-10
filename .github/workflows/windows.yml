@@ -69,12 +69,14 @@ jobs:
           nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
 
       - name: Third party cache
+        id: thirdparty
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ env.TBUILD }}/ThirdParty
           key: thirdparty-${{ env.CACHE_KEY }}
 
       - name: Libraries cache
+        id: libraries
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
@@ -84,6 +86,7 @@ jobs:
           key: libraries-${{ env.CACHE_KEY }}
 
       - name: Qt cache
+        id: qt
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
@@ -94,6 +97,32 @@ jobs:
       - name: Build dependencies
         shell: cmd
         run: call "%TBUILD%\tdesktop\Telegram\build\prepare\win.bat" skip-release silent qt6
+
+      - name: Save prepared third party tools
+        if: steps.thirdparty.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.TBUILD }}/ThirdParty
+          key: thirdparty-${{ env.CACHE_KEY }}
+
+      - name: Save prepared libraries
+        if: steps.libraries.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ env.TBUILD }}/Libraries/win64/*
+            !${{ env.TBUILD }}/Libraries/win64/[qQ]t[_-]*
+            !${{ env.TBUILD }}/Libraries/win64/cache_keys/[qQ]t[_-]*
+          key: libraries-${{ env.CACHE_KEY }}
+
+      - name: Save prepared Qt
+        if: steps.qt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ env.TBUILD }}/Libraries/win64/[qQ]t[_-]*
+            ${{ env.TBUILD }}/Libraries/win64/cache_keys/[qQ]t[_-]*
+          key: qt-${{ env.CACHE_KEY }}
 
       - name: Build Goldgram
         shell: cmd
