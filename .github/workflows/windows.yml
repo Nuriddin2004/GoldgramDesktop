@@ -124,6 +124,9 @@ jobs:
             ${{ env.TBUILD }}/Libraries/win64/cache_keys/[qQ]t[_-]*
           key: qt-${{ env.CACHE_KEY }}
 
+      - name: Free space for the application build
+        run: ./scripts/prune_dependencies.ps1
+
       - name: Build Goldgram
         shell: cmd
         env:
