@@ -1,0 +1,121 @@
+name: Goldgram Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: goldgram-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Prepare directories
+        run: |
+          New-Item -ItemType Directory -Force "$env:USERPROFILE/TBuild/Libraries" | Out-Null
+          New-Item -ItemType SymbolicLink -Path "$env:GITHUB_WORKSPACE/TBuild" -Target "$env:USERPROFILE/TBuild" | Out-Null
+          "TBUILD=$env:GITHUB_WORKSPACE/TBuild" >> $env:GITHUB_ENV
+
+      - name: Checkout pinned Telegram Desktop source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: telegramdesktop/tdesktop
+          ref: 42f8a36d43b8c805bc821905bea4cfeb3af1d41d
+          submodules: recursive
+          path: TBuild/tdesktop
+          persist-credentials: false
+
+      - name: Apply Goldgram changes
+        run: python scripts/apply_branding.py "$env:TBUILD/tdesktop"
+
+      - name: Configure dependency build
+        run: |
+          git config --global user.email 'build@users.noreply.github.com'
+          git config --global user.name 'Goldgram Build'
+          $hash = (Get-FileHash "$env:TBUILD/tdesktop/Telegram/build/prepare/prepare.py" -Algorithm SHA256).Hash
+          "CACHE_KEY=win-x64-qt6-14.44-26100-$hash" >> $env:GITHUB_ENV
+          Get-ChildItem "$env:ProgramFiles/CMake/share/cmake*/Modules/Platform/Windows-MSVC.cmake" | ForEach-Object {
+            $text = [IO.File]::ReadAllText($_.FullName)
+            $text = [regex]::Replace($text, '(?m)^.*CMAKE_\$\{lang\}_FLAGS_DEBUG_INIT.*$', { param($m) $m.Value.Replace('${_Zi}', '') })
+            [IO.File]::WriteAllText($_.FullName, $text)
+          }
+
+      - name: MSVC x64 environment
+        uses: Eden-CI/msvc-dev-cmd@1bd71f95d6f3d1b2b3395b335cc63bcdc90cf223
+        with:
+          arch: x64
+          sdk: 10.0.26100.0
+          toolset: '14.44'
+
+      - name: NuGet sources
+        shell: cmd
+        run: |
+          nuget sources Disable -Name "Microsoft Visual Studio Offline Packages"
+          nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
+
+      - name: Third party cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.TBUILD }}/ThirdParty
+          key: thirdparty-${{ env.CACHE_KEY }}
+
+      - name: Libraries cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ env.TBUILD }}/Libraries/win64/*
+            !${{ env.TBUILD }}/Libraries/win64/[qQ]t[_-]*
+            !${{ env.TBUILD }}/Libraries/win64/cache_keys/[qQ]t[_-]*
+          key: libraries-${{ env.CACHE_KEY }}
+
+      - name: Qt cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ env.TBUILD }}/Libraries/win64/[qQ]t[_-]*
+            ${{ env.TBUILD }}/Libraries/win64/cache_keys/[qQ]t[_-]*
+          key: qt-${{ env.CACHE_KEY }}
+
+      - name: Build dependencies
+        shell: cmd
+        run: call "%TBUILD%\tdesktop\Telegram\build\prepare\win.bat" skip-release silent qt6
+
+      - name: Build Goldgram
+        shell: cmd
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        run: |
+          if "%TELEGRAM_API_ID%"=="" exit /b 1
+          if "%TELEGRAM_API_HASH%"=="" exit /b 1
+          cd /d "%TBUILD%\tdesktop\Telegram"
+          call configure.bat x64 qt6 -D TDESKTOP_API_ID=%TELEGRAM_API_ID% -D TDESKTOP_API_HASH=%TELEGRAM_API_HASH% -D CMAKE_CONFIGURATION_TYPES=Debug -D CMAKE_COMPILE_WARNING_AS_ERROR=ON -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          if errorlevel 1 exit /b 1
+          cmake --build ..\out --config Debug --target Telegram --parallel 4
+          if errorlevel 1 exit /b 1
+
+      - name: Package binary and corresponding source
+        run: python scripts/package.py "$env:TBUILD/tdesktop"
+
+      - name: Upload build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: Goldgram-Windows-x64
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14

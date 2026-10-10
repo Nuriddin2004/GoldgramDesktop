@@ -1,0 +1,7 @@
+source/
+TBuild/
+dist/
+*.log
+__pycache__/
+.venv/
+API_KEYS
